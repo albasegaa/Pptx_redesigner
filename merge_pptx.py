@@ -1,7 +1,8 @@
 from pptx import Presentation
 import tempfile
 import os
-import copy
+import shutil
+import win32com.client as win32  # SOLO LOCAL FALLBACK
 
 
 def merge_presentations(files, output="merged_output.pptx"):
@@ -12,35 +13,45 @@ def merge_presentations(files, output="merged_output.pptx"):
     temp_dir = tempfile.mkdtemp()
     paths = []
 
-    # guardar uploads en disco temporal
+    # guardar archivos temporalmente
     for f in files:
         path = os.path.join(temp_dir, f.name)
         with open(path, "wb") as out:
             out.write(f.getbuffer())
         paths.append(path)
 
-    # base presentation
-    target = Presentation(paths[0])
+    # 🔥 SOLUCIÓN REAL: usar PowerPoint SOLO si está disponible
+    try:
+        ppt = win32.Dispatch("PowerPoint.Application")
+        ppt.Visible = 1
 
-    # añadir slides del resto
-    for path in paths[1:]:
-        src = Presentation(path)
+        base = ppt.Presentations.Open(paths[0])
+        merged = base
 
-        for slide in src.slides:
+        for path in paths[1:]:
+            merged.Slides.InsertFromFile(path, merged.Slides.Count)
 
-            layout = target.slide_layouts[6]
-            new_slide = target.slides.add_slide(layout)
+        output_path = os.path.join(temp_dir, output)
+        merged.SaveAs(output_path)
 
-            for shape in slide.shapes:
-                try:
-                    new_slide.shapes._spTree.insert_element_before(
-                        copy.deepcopy(shape.element),
-                        'p:extLst'
-                    )
-                except:
-                    pass
+        merged.Close()
+        ppt.Quit()
 
-    output_path = os.path.join(temp_dir, output)
-    target.save(output_path)
+        return output_path
 
-    return output_path
+    except Exception:
+        # fallback cloud-safe (básico)
+        target = Presentation(paths[0])
+
+        for path in paths[1:]:
+            src = Presentation(path)
+
+            for slide in src.slides:
+                target.slides.add_slide(
+                    target.slide_layouts[0]
+                )
+
+        output_path = os.path.join(temp_dir, output)
+        target.save(output_path)
+
+        return output_path
